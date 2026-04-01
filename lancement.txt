@@ -1,0 +1,4 @@
+creena sy lancena ny .venv ao aminy readme (creena 1 fois ihany lay .venv)
+dia avy eo 
+pip install -r requirements.txt dia avy eo lancena
+mlflow ui --port 5000
