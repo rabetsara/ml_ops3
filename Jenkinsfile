@@ -13,6 +13,8 @@ pipeline {
                 echo "Nettoyage..."
                 sh 'docker-compose down --remove-orphans || true'
                 sh 'docker rmi smartphones-ml-app || true'
+                sh 'docker stop smartphones-api || true'
+                sh 'docker rm   smartphones-api || true'
             }
         }
 
@@ -30,7 +32,6 @@ pipeline {
                     mkdir -p ${REPORT_DIR}
                     mkdir -p ${TRIVY_CACHE}
 
-                    # Scan → JSON
                     docker run --rm \
                         -v /var/run/docker.sock:/var/run/docker.sock \
                         -v ${TRIVY_CACHE}:/root/.cache/trivy \
@@ -43,7 +44,6 @@ pipeline {
                         --output /reports/trivy-raw.json \
                         smartphones-ml-app
 
-                    # CSV global
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
                         imega/jq -r '
@@ -53,7 +53,6 @@ pipeline {
                           | @csv
                         ' /reports/trivy-raw.json > ${REPORT_DIR}/resultat.csv
 
-                    # CSV CRITICAL
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
                         imega/jq -r '
@@ -63,7 +62,6 @@ pipeline {
                           | @csv
                         ' /reports/trivy-raw.json > ${REPORT_DIR}/resultat_critical.csv
 
-                    # CSV HIGH
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
                         imega/jq -r '
@@ -73,7 +71,6 @@ pipeline {
                           | @csv
                         ' /reports/trivy-raw.json > ${REPORT_DIR}/resultat_high.csv
 
-                    # CSV MEDIUM
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
                         imega/jq -r '
@@ -83,7 +80,6 @@ pipeline {
                           | @csv
                         ' /reports/trivy-raw.json > ${REPORT_DIR}/resultat_medium.csv
 
-                    # CSV LOW
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
                         imega/jq -r '
@@ -93,7 +89,6 @@ pipeline {
                           | @csv
                         ' /reports/trivy-raw.json > ${REPORT_DIR}/resultat_low.csv
 
-                    # Résumé console
                     echo "=== Résumé du scan Trivy ==="
                     echo "CRITICAL : $(tail -n +2 ${REPORT_DIR}/resultat_critical.csv | wc -l)"
                     echo "HIGH     : $(tail -n +2 ${REPORT_DIR}/resultat_high.csv | wc -l)"
@@ -162,6 +157,44 @@ pipeline {
                 sh 'docker-compose run --rm predict'
             }
         }
+
+        stage('Deploy API') {
+            steps {
+                echo "Déploiement de l'API de prédiction..."
+                sh '''
+                    docker stop smartphones-api || true
+                    docker rm   smartphones-api || true
+
+                    docker run -d \
+                        --name smartphones-api \
+                        --network ml_ops2_default \
+                        -p 8080:8080 \
+                        -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
+                        -e MLFLOW_SERVER_DISABLE_SECURITY_MIDDLEWARE=true \
+                        -v $(pwd)/mlruns:/mlflow/mlruns \
+                        -v $(pwd)/workspace:/app/workspace \
+                        smartphones-ml-app \
+                        mlflow models serve \
+                            -m "models:/smartphones_price_model@Production" \
+                            --host 0.0.0.0 \
+                            --port 8080 \
+                            --no-conda
+
+                    echo "Attente de l API..."
+                    for i in $(seq 1 20); do
+                        if docker exec smartphones-api curl -sf http://localhost:8080/health 2>/dev/null; then
+                            echo "API prête ✅"
+                            exit 0
+                        fi
+                        echo "Tentative $i/20..."
+                        sleep 5
+                    done
+                    echo "API non disponible après 100 secondes"
+                    docker logs smartphones-api
+                    exit 1
+                '''
+            }
+        }
     }
 
     post {
@@ -169,10 +202,12 @@ pipeline {
             sh 'docker-compose down --remove-orphans || true'
         }
         success {
-            echo "Pipeline OK ✅"
+            echo "Pipeline OK ✅ — API disponible sur http://localhost:8080/invocations"
         }
         failure {
             echo "Pipeline FAILED ❌"
+            sh 'docker stop smartphones-api || true'
+            sh 'docker rm   smartphones-api || true'
         }
     }
 }
