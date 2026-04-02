@@ -165,9 +165,14 @@ pipeline {
                     docker stop smartphones-api || true
                     docker rm   smartphones-api || true
 
+                    # Récupérer le nom du réseau dynamiquement depuis mlflow_server
+                    NETWORK=$(docker inspect mlflow_server \
+                        --format='{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}')
+                    echo "Réseau détecté : ${NETWORK}"
+
                     docker run -d \
                         --name smartphones-api \
-                        --network ml_ops2_default \
+                        --network ${NETWORK} \
                         -p 8080:8080 \
                         -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
                         -e MLFLOW_SERVER_DISABLE_SECURITY_MIDDLEWARE=true \
