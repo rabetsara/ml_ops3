@@ -17,9 +17,9 @@ pipeline {
                 sh 'docker stop smartphones-api || true'
                 sh 'docker rm   smartphones-api || true'
                 sh '''
-                    CONTAINER=$(docker ps -q --filter "publish=${API_PORT}")
+                    CONTAINER=$(docker ps -q --filter "publish=8081")
                     if [ -n "$CONTAINER" ]; then
-                        echo "Port ${API_PORT} occupé par $CONTAINER — nettoyage..."
+                        echo "Port 8081 occupe par $CONTAINER nettoyage..."
                         docker stop $CONTAINER || true
                         docker rm   $CONTAINER || true
                     fi
@@ -36,7 +36,7 @@ pipeline {
 
         stage('Security Scan (Trivy)') {
             steps {
-                echo "Scan sécurité..."
+                echo "Scan securite..."
                 sh '''
                     mkdir -p ${REPORT_DIR}
                     mkdir -p ${TRIVY_CACHE}
@@ -55,50 +55,30 @@ pipeline {
 
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
-                        imega/jq -r '
-                          ["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],
-                          (.Results[]?.Vulnerabilities[]? |
-                          [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))])
-                          | @csv
-                        ' /reports/trivy-raw.json > ${REPORT_DIR}/resultat.csv
+                        imega/jq -r '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
+                        /reports/trivy-raw.json > ${REPORT_DIR}/resultat.csv
 
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
-                        imega/jq -r '
-                          ["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],
-                          (.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL") |
-                          [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))])
-                          | @csv
-                        ' /reports/trivy-raw.json > ${REPORT_DIR}/resultat_critical.csv
+                        imega/jq -r '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
+                        /reports/trivy-raw.json > ${REPORT_DIR}/resultat_critical.csv
 
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
-                        imega/jq -r '
-                          ["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],
-                          (.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH") |
-                          [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))])
-                          | @csv
-                        ' /reports/trivy-raw.json > ${REPORT_DIR}/resultat_high.csv
+                        imega/jq -r '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
+                        /reports/trivy-raw.json > ${REPORT_DIR}/resultat_high.csv
 
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
-                        imega/jq -r '
-                          ["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],
-                          (.Results[]?.Vulnerabilities[]? | select(.Severity == "MEDIUM") |
-                          [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))])
-                          | @csv
-                        ' /reports/trivy-raw.json > ${REPORT_DIR}/resultat_medium.csv
+                        imega/jq -r '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "MEDIUM") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
+                        /reports/trivy-raw.json > ${REPORT_DIR}/resultat_medium.csv
 
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
-                        imega/jq -r '
-                          ["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],
-                          (.Results[]?.Vulnerabilities[]? | select(.Severity == "LOW") |
-                          [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))])
-                          | @csv
-                        ' /reports/trivy-raw.json > ${REPORT_DIR}/resultat_low.csv
+                        imega/jq -r '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "LOW") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
+                        /reports/trivy-raw.json > ${REPORT_DIR}/resultat_low.csv
 
-                    echo "=== Résumé du scan Trivy ==="
+                    echo "=== Resume du scan Trivy ==="
                     echo "CRITICAL : $(tail -n +2 ${REPORT_DIR}/resultat_critical.csv | wc -l)"
                     echo "HIGH     : $(tail -n +2 ${REPORT_DIR}/resultat_high.csv | wc -l)"
                     echo "MEDIUM   : $(tail -n +2 ${REPORT_DIR}/resultat_medium.csv | wc -l)"
@@ -107,11 +87,7 @@ pipeline {
             }
             post {
                 always {
-                    archiveArtifacts artifacts: '''trivy-reports/resultat.csv,
-                                                  trivy-reports/resultat_critical.csv,
-                                                  trivy-reports/resultat_high.csv,
-                                                  trivy-reports/resultat_medium.csv,
-                                                  trivy-reports/resultat_low.csv''',
+                    archiveArtifacts artifacts: 'trivy-reports/resultat.csv, trivy-reports/resultat_critical.csv, trivy-reports/resultat_high.csv, trivy-reports/resultat_medium.csv, trivy-reports/resultat_low.csv',
                                      allowEmptyArchive: true
                 }
             }
@@ -119,14 +95,14 @@ pipeline {
 
         stage('Start MLflow') {
             steps {
-                echo "Démarrage MLflow..."
+                echo "Demarrage MLflow..."
                 sh 'docker-compose up -d mlflow'
                 echo "Attente MLflow healthy..."
                 sh '''
                     for i in $(seq 1 24); do
-                        STATUS=$(docker inspect --format='{{.State.Health.Status}}' mlflow_server || echo "starting")
+                        STATUS=$(docker inspect --format="{{.State.Health.Status}}" mlflow_server || echo "starting")
                         if [ "$STATUS" = "healthy" ]; then
-                            echo "MLflow prêt !"
+                            echo "MLflow pret !"
                             exit 0
                         fi
                         echo "Etat: $STATUS | tentative $i/24..."
@@ -148,14 +124,14 @@ pipeline {
 
         stage('Validate Metrics') {
             steps {
-                echo "Validation des métriques..."
+                echo "Validation des metriques..."
                 sh 'docker-compose run --rm app python /app/validate_metrics.py'
             }
         }
 
         stage('Promote Model') {
             steps {
-                echo "Promotion du modèle en Production..."
+                echo "Promotion du modele en Production..."
                 sh 'docker-compose run --rm app python /app/promote_model.py'
             }
         }
@@ -169,20 +145,18 @@ pipeline {
 
         stage('Deploy API') {
             steps {
-                echo "Déploiement de l'API sur le port ${API_PORT}..."
+                echo "Deploiement de l API sur le port ${API_PORT}..."
                 sh '''
                     docker stop smartphones-api || true
                     docker rm   smartphones-api || true
 
-                    # Récupérer le nom du réseau dynamiquement
-                    NETWORK=$(docker inspect mlflow_server \
-                        --format='{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}')
-                    echo "Réseau détecté : ${NETWORK}"
+                    NETWORK=$(docker inspect mlflow_server --format="{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}}{{end}}")
+                    echo "Reseau detecte : ${NETWORK}"
 
                     docker run -d \
                         --name smartphones-api \
                         --network ${NETWORK} \
-                        -p ${API_PORT}:8080 \
+                        -p 8081:8080 \
                         -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
                         -e MLFLOW_SERVER_DISABLE_SECURITY_MIDDLEWARE=true \
                         -v $(pwd)/mlruns:/mlflow/mlruns \
@@ -197,13 +171,13 @@ pipeline {
                     echo "Attente de l API..."
                     for i in $(seq 1 20); do
                         if docker exec smartphones-api curl -sf http://localhost:8080/health 2>/dev/null; then
-                            echo "API prête ✅"
+                            echo "API prete"
                             exit 0
                         fi
                         echo "Tentative $i/20..."
                         sleep 5
                     done
-                    echo "API non disponible après 100 secondes"
+                    echo "API non disponible apres 100 secondes"
                     docker logs smartphones-api
                     exit 1
                 '''
@@ -216,23 +190,12 @@ pipeline {
             sh 'docker-compose down --remove-orphans || true'
         }
         success {
-            echo "Pipeline OK ✅ — API disponible sur http://localhost:${API_PORT}/invocations"
+            echo "Pipeline OK - API disponible sur http://localhost:8081/invocations"
         }
         failure {
-            echo "Pipeline FAILED ❌"
+            echo "Pipeline FAILED"
             sh 'docker stop smartphones-api || true'
             sh 'docker rm   smartphones-api || true'
         }
     }
 }
-```
-
----
-
-## Ce qui change
-
-`API_PORT = "8081"` est défini dans le bloc `environment` — un seul endroit à modifier si tu veux changer le port à l'avenir. Le mapping Docker est `-p 8081:8080` — le conteneur écoute en interne sur `8080`, mais est accessible depuis l'extérieur sur `8081`.
-```
-Jenkins    → port 8080  (inchangé)
-MLflow     → port 5000  (inchangé)
-API Predict → port 8081  (nouveau)
