@@ -4,6 +4,7 @@ pipeline {
     environment {
         TRIVY_CACHE = "/tmp/trivy-cache"
         REPORT_DIR  = "${WORKSPACE}/trivy-reports"
+        API_PORT    = "8081"
     }
 
     stages {
@@ -16,9 +17,9 @@ pipeline {
                 sh 'docker stop smartphones-api || true'
                 sh 'docker rm   smartphones-api || true'
                 sh '''
-                    CONTAINER=$(docker ps -q --filter "publish=8080")
+                    CONTAINER=$(docker ps -q --filter "publish=${API_PORT}")
                     if [ -n "$CONTAINER" ]; then
-                        echo "Port 8080 occupé par $CONTAINER — nettoyage..."
+                        echo "Port ${API_PORT} occupé par $CONTAINER — nettoyage..."
                         docker stop $CONTAINER || true
                         docker rm   $CONTAINER || true
                     fi
@@ -168,7 +169,7 @@ pipeline {
 
         stage('Deploy API') {
             steps {
-                echo "Déploiement de l'API de prédiction..."
+                echo "Déploiement de l'API sur le port ${API_PORT}..."
                 sh '''
                     docker stop smartphones-api || true
                     docker rm   smartphones-api || true
@@ -181,7 +182,7 @@ pipeline {
                     docker run -d \
                         --name smartphones-api \
                         --network ${NETWORK} \
-                        -p 8080:8080 \
+                        -p ${API_PORT}:8080 \
                         -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
                         -e MLFLOW_SERVER_DISABLE_SECURITY_MIDDLEWARE=true \
                         -v $(pwd)/mlruns:/mlflow/mlruns \
@@ -215,7 +216,7 @@ pipeline {
             sh 'docker-compose down --remove-orphans || true'
         }
         success {
-            echo "Pipeline OK ✅ — API disponible sur http://localhost:8080/invocations"
+            echo "Pipeline OK ✅ — API disponible sur http://localhost:${API_PORT}/invocations"
         }
         failure {
             echo "Pipeline FAILED ❌"
@@ -224,3 +225,14 @@ pipeline {
         }
     }
 }
+```
+
+---
+
+## Ce qui change
+
+`API_PORT = "8081"` est défini dans le bloc `environment` — un seul endroit à modifier si tu veux changer le port à l'avenir. Le mapping Docker est `-p 8081:8080` — le conteneur écoute en interne sur `8080`, mais est accessible depuis l'extérieur sur `8081`.
+```
+Jenkins    → port 8080  (inchangé)
+MLflow     → port 5000  (inchangé)
+API Predict → port 8081  (nouveau)
