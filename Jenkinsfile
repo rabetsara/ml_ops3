@@ -19,7 +19,7 @@ pipeline {
                 sh '''
                     CONTAINER=$(docker ps -q --filter "publish=8081")
                     if [ -n "$CONTAINER" ]; then
-                        echo "Port 8081 occupe par $CONTAINER nettoyage..."
+                        echo "Port 8081 occupe nettoyage..."
                         docker stop $CONTAINER || true
                         docker rm   $CONTAINER || true
                     fi
@@ -55,27 +55,32 @@ pipeline {
 
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
-                        imega/jq -r '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
+                        imega/jq -r \
+                        '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
                         /reports/trivy-raw.json > ${REPORT_DIR}/resultat.csv
 
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
-                        imega/jq -r '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
+                        imega/jq -r \
+                        '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
                         /reports/trivy-raw.json > ${REPORT_DIR}/resultat_critical.csv
 
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
-                        imega/jq -r '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
+                        imega/jq -r \
+                        '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
                         /reports/trivy-raw.json > ${REPORT_DIR}/resultat_high.csv
 
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
-                        imega/jq -r '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "MEDIUM") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
+                        imega/jq -r \
+                        '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "MEDIUM") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
                         /reports/trivy-raw.json > ${REPORT_DIR}/resultat_medium.csv
 
                     docker run --rm \
                         -v ${REPORT_DIR}:/reports \
-                        imega/jq -r '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "LOW") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
+                        imega/jq -r \
+                        '["PackageName","VulnerabilityID","Severity","InstalledVersion","FixedVersion","Title"],(.Results[]?.Vulnerabilities[]? | select(.Severity == "LOW") | [.PkgName, .VulnerabilityID, .Severity, .InstalledVersion, (.FixedVersion // ""), (.Title // "" | gsub(","; " "))]) | @csv' \
                         /reports/trivy-raw.json > ${REPORT_DIR}/resultat_low.csv
 
                     echo "=== Resume du scan Trivy ==="
@@ -145,12 +150,19 @@ pipeline {
 
         stage('Deploy API') {
             steps {
-                echo "Deploiement de l API sur le port ${API_PORT}..."
+                echo "Deploiement de l API sur le port 8081..."
                 sh '''
                     docker stop smartphones-api || true
                     docker rm   smartphones-api || true
 
-                    NETWORK=$(docker inspect mlflow_server --format="{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}}{{end}}")
+                    # Recuperer le reseau via docker network ls filtre sur le projet
+                    NETWORK=$(docker inspect mlflow_server --format="{{json .NetworkSettings.Networks}}" | tr ',' '\n' | grep -o '"[^"]*_default"' | head -1 | tr -d '"')
+
+                    # Fallback si le reseau n est pas detecte
+                    if [ -z "$NETWORK" ]; then
+                        NETWORK=$(docker network ls --filter "name=default" --format "{{.Name}}" | grep -v bridge | head -1)
+                    fi
+
                     echo "Reseau detecte : ${NETWORK}"
 
                     docker run -d \
