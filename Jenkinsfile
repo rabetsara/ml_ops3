@@ -15,6 +15,14 @@ pipeline {
                 sh 'docker rmi smartphones-ml-app || true'
                 sh 'docker stop smartphones-api || true'
                 sh 'docker rm   smartphones-api || true'
+                sh '''
+                    CONTAINER=$(docker ps -q --filter "publish=8080")
+                    if [ -n "$CONTAINER" ]; then
+                        echo "Port 8080 occupé par $CONTAINER — nettoyage..."
+                        docker stop $CONTAINER || true
+                        docker rm   $CONTAINER || true
+                    fi
+                '''
             }
         }
 
@@ -165,7 +173,7 @@ pipeline {
                     docker stop smartphones-api || true
                     docker rm   smartphones-api || true
 
-                    # Récupérer le nom du réseau dynamiquement depuis mlflow_server
+                    # Récupérer le nom du réseau dynamiquement
                     NETWORK=$(docker inspect mlflow_server \
                         --format='{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}')
                     echo "Réseau détecté : ${NETWORK}"
